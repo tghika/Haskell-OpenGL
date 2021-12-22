@@ -10,7 +10,6 @@ main = do
     scrHeight = 600
   
   GLFW.init
-  GLFW.defaultWindowHints
   
   GLFW.windowHint $ GLFW.WindowHint'ContextVersionMajor 3
   GLFW.windowHint $ GLFW.WindowHint'ContextVersionMinor 0
@@ -32,7 +31,7 @@ main = do
         b <- GLFW.windowShouldClose window
         
         if b then
-          return ()
+          GLFW.terminate
           
         else do
           processInput window
