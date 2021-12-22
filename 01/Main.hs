@@ -37,7 +37,7 @@ main = do
           processInput window
           
           GL.clearColor $= Color4 0.5 0.8 0.9 1
-          GL.clear [ColorBuffer]
+          GL.clear [GL.ColorBuffer]
           
           GLFW.swapBuffers window
           GLFW.pollEvents
