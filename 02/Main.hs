@@ -96,10 +96,10 @@ main = do
         indices = [0, 1, 3
                   ,1, 2, 3] :: [GLuint]
 
-        bufferListData t l bu =
+        bufferListData t l u =
           withArray l $ \ptr2Data -> do
             let sizeOfData = fromIntegral $ (length l) * (sizeOf $ l!!0)
-            GL.bufferData t $= (sizeOfData, ptr2Data, bu)
+            GL.bufferData t $= (sizeOfData, ptr2Data, u)
       
       vao <- genObjectName
       GL.bindVertexArrayObject $= Just vao
@@ -121,7 +121,7 @@ main = do
 
       GL.polygonMode $= (GL.Line, GL.Line)
 
-      fix $ \loop -> do
+      fix $ \rec -> do
 
         b <- GLFW.windowShouldClose window
         
@@ -131,7 +131,7 @@ main = do
         else do
           processInput window
           
-          GL.clearColor $= Color4 0.5 0.8 0.9 1
+          GL.clearColor $= GL.Color4 0.5 0.8 0.9 1
           GL.clear [GL.ColorBuffer]
           
           GL.currentProgram $= Just shaderProgram
@@ -142,7 +142,7 @@ main = do
           GLFW.swapBuffers window
           GLFW.pollEvents
           
-          loop
+          rec
 
       deleteObjectName vao
       deleteObjectName vbo
@@ -150,8 +150,6 @@ main = do
       deleteObjectName shaderProgram
 
       GLFW.terminate
-
-      putStrLn "terminated successfully"
 
 
 processInput :: Window -> IO ()
