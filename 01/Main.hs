@@ -55,4 +55,4 @@ processInput window = do
 
 framebufferSizeCallback :: GLFW.FramebufferSizeCallback
 framebufferSizeCallback window width height = 
-    GL.viewport $= (GL.Position 0 0, GL.Size (fromIntegral width) (fromIntegral height))
+  GL.viewport $= (GL.Position 0 0, GL.Size (fromIntegral width) (fromIntegral height))
