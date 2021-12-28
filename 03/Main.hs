@@ -10,11 +10,11 @@ import qualified Data.ByteString as B
 main :: IO ()
 main = do
   let 
-    scrWidth = 800
+    scrWidth  = 800
     scrHeight = 600
 
   vertexShaderSource <- B.readFile "./shader.vs"
-  fragmentShaderSource<- B.readFile "./shader.fs"
+  fragmentShaderSource <- B.readFile "./shader.fs"
   
   GLFW.init
   
