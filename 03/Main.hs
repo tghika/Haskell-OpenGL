@@ -84,7 +84,8 @@ main = do
           , (0.5*) $ cos $ (90+120*2)*(pi/180), (0.5*) $ sin $ (90+120*2)*(pi/180), 0.0, 0.0, 0.0, 1.0] :: [GLfloat]
 
         v_layout = do
-          x <- (0:) . foldr (\a b -> zipWith (+) (repeat a) (0:b)) [] $ [3,3]
+          d <- return [3,3]
+          x <- (0:) . foldr (\a b -> zipWith (+) (repeat a) (0:b)) [] $ d
           return $ x * (fromIntegral . sizeOf $ vertices!!0)
 
         indices = [0, 1, 2] :: [GLuint]
