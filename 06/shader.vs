@@ -5,7 +5,7 @@ varying   vec2 TexCoord;
 uniform   mat4 transform;
 
 void main() {
-   outColor = aColor;
+   outColor = vec3(0,0,0);
    TexCoord = aTexCoord;
    gl_Position = transform * vec4(aPos, 1.0);
 }
