@@ -21,9 +21,6 @@ import qualified Data.ByteString as B
 
 main :: IO ()
 main = do
-  let 
-    scrWidth = 800
-    scrHeight = 800
 
   vertexShaderSource <- B.readFile "./shader.vs"
   fragmentShaderSource<- B.readFile "./shader.fs"
@@ -34,7 +31,7 @@ main = do
   GLFW.windowHint $ GLFW.WindowHint'ContextVersionMinor 0
   GLFW.windowHint $ GLFW.WindowHint'OpenGLProfile GLFW.OpenGLProfile'Any
    
-  winMaybe <- GLFW.createWindow scrWidth scrHeight "LearnOpenGL" Nothing Nothing
+  winMaybe <- GLFW.createWindow 640 480 "LearnOpenGL" Nothing Nothing
 
   case winMaybe of
     Nothing -> do
@@ -115,10 +112,6 @@ main = do
       GL.bindBuffer GL.ArrayBuffer $= Just vbo
       bufferListData GL.ArrayBuffer vertices GL.StaticDraw
 
-      -- ebo <- genObjectName
-      -- GL.bindBuffer GL.ElementArrayBuffer $= Just ebo
-      -- bufferListData GL.ElementArrayBuffer indices GL.StaticDraw
-
       GL.vertexAttribPointer attribLocation_0
         $= (GL.ToFloat, GL.VertexArrayDescriptor 3 GL.Float (v_layout!!2) (plusPtr nullPtr . fromIntegral $ v_layout!!0))
       GL.vertexAttribArray attribLocation_0 $= GL.Enabled
@@ -137,49 +130,12 @@ main = do
       GL.textureWrapMode GL.Texture2D GL.T
         $= (GL.Repeated, GL.Repeat)
 
-      img' <- readImageWithMetadata "./img1.jpg"
-
-      case img' of
-        Left s -> putStrLn $ "Error: " ++ s
-        
-        Right (img, metaData) -> do
-          t <- return $ do
-            w <- (JP.lookup Width metaData)
-            h <- (JP.lookup Height metaData)
-            return (w,h)
-    
-          case t of
-            Nothing -> putStrLn "Failed to read meta-data"
-            Just (imgWidth, imgHeight) -> do
-              -- print (imgWidth, imgHeight)
-              (width, height) <- return (fromIntegral imgWidth, fromIntegral imgHeight)
-              imgRGB <- return $ convertRGB8 img
-    
-              ptr <- mallocArray (width*height*3)
-    
-              ($(0,0)) . fix $ \rec (i,j) ->
-                if i < height then do
-                  let
-                    (PixelRGB8 r g b) = pixelAt imgRGB j i
-                    rbg_GLubyte = (fmap fromIntegral $ [r,g,b])::[GLubyte]
-    
-                  pokeElemOff ptr (3*(width*(height-1-i)+j) + 0) (rbg_GLubyte!!0)
-                  pokeElemOff ptr (3*(width*(height-1-i)+j) + 1) (rbg_GLubyte!!1)
-                  pokeElemOff ptr (3*(width*(height-1-i)+j) + 2) (rbg_GLubyte!!2)
-    
-                  (return $ if (succ j) >= width then (succ i, 0) else (i, succ j))
-                    >>= rec
-    
-                else
-                  return ()
-
-              GL.texImage2D GL.Texture2D GL.NoProxy 0 GL.RGB'
-                (TextureSize2D (fromIntegral imgWidth) (fromIntegral imgHeight)) 0
-                  (GL.PixelData GL.RGB GL.UnsignedByte ptr)
-              GL.generateMipmap' GL.Texture2D
-              GL.uniform uniformLocation_0 $= (0::GLint)
-
-              free ptr
+      withImg "./img1.jpg" $ \ptr imgWidth imgHeight -> do
+        GL.texImage2D GL.Texture2D GL.NoProxy 0 GL.RGB'
+          (TextureSize2D imgWidth imgHeight) 0
+            (GL.PixelData GL.RGB GL.UnsignedByte ptr)
+        GL.generateMipmap' GL.Texture2D
+        GL.uniform uniformLocation_0 $= (0::GLint)
 
       GL.bindBuffer GL.ArrayBuffer $= Nothing
       GL.bindVertexArrayObject $= Nothing
@@ -207,7 +163,9 @@ main = do
           return ()
           
         else do
-          processInput window [cameraPos, cameraDir, cameraUp]
+          (_,(Size scrWidth scrHeight)) <- get $ GL.viewport
+
+          processInput window (CameraState cameraPos cameraDir cameraUp)
 
           t_maybe <- getTime
           case t_maybe of
@@ -227,12 +185,12 @@ main = do
                     ((fromIntegral scrWidth)/(fromIntegral scrHeight)) 0.1 100
                     
               trans <- (GL.newMatrix GL.ColumnMajor $
-                mat4x4ToList $ (projection !*! view !*! model)) :: IO (GLmatrix GLfloat)
+                mat4ToList $ (projection !*! view !*! model)) :: IO (GLmatrix GLfloat)
               GL.uniform uniformLocation_1 $= trans
               
             Nothing -> do
               trans <- (GL.newMatrix GL.ColumnMajor $
-                mat4x4ToList $ (identity :: M44 GLfloat)) :: IO (GLmatrix GLfloat)
+                mat4ToList $ (identity :: M44 GLfloat)) :: IO (GLmatrix GLfloat)
               GL.uniform uniformLocation_1 $= trans
 
           GL.clearColor $= GL.Color4 (0.5*0.5) (0.8*0.5) (0.9*0.5) 1
@@ -242,8 +200,6 @@ main = do
           GL.activeTexture $= GL.TextureUnit 0
           GL.textureBinding GL.Texture2D $= Just texture
           GL.bindVertexArrayObject $= Just vao
-          -- GL.drawElements GL.Triangles (fromIntegral . length $ indices) GL.UnsignedInt nullPtr
-          -- GL.bindVertexArrayObject $= Nothing
 
           GL.drawArrays GL.Triangles 0 36
 
@@ -256,14 +212,16 @@ main = do
 
       deleteObjectName vao
       deleteObjectName vbo
-      -- deleteObjectName ebo
       deleteObjectName shaderProgram
 
       GLFW.terminate
 
+    
+data CameraState = 
+  CameraState (StateVar (V3 GLfloat)) (StateVar (V3 GLfloat)) (StateVar (V3 GLfloat))
 
-processInput :: Window -> [StateVar (V3 GLfloat)] -> IO ()
-processInput window vars = do
+processInput :: Window -> CameraState -> IO ()
+processInput window (CameraState cameraPos  cameraDir  cameraUp) = do
   let cameraSpeed = 0.05
   currentCameraDir <- get cameraDir
   currentCameraUp  <- get cameraUp
@@ -287,17 +245,13 @@ processInput window vars = do
     if (s == GLFW.KeyState'Pressed) then
       cameraPos $~ (+ (cameraSpeed *^ currentCameraDir))
     else return ()
-  where
-    cameraPos = vars !! 0
-    cameraDir = vars !! 1
-    cameraUp  = vars !! 2
 
 framebufferSizeCallback :: GLFW.FramebufferSizeCallback
 framebufferSizeCallback window width height = 
   GL.viewport $= (GL.Position 0 0, GL.Size (fromIntegral width) (fromIntegral height))
 
-mat4x4ToList :: M44 a -> [a]
-mat4x4ToList (V4 (V4 a11 a12 a13 a14) (V4 a21 a22 a23 a24) (V4 a31 a32 a33 a34) (V4 a41 a42 a43 a44)) =
+mat4ToList :: M44 a -> [a]
+mat4ToList (V4 (V4 a11 a12 a13 a14) (V4 a21 a22 a23 a24) (V4 a31 a32 a33 a34) (V4 a41 a42 a43 a44)) =
   [a11,a21,a31,a41,a12,a22,a32,a42,a13,a23,a33,a43,a14,a24,a34,a44]
 
 radians :: (Floating a) => a -> a
@@ -379,3 +333,44 @@ model_cube =
 
 makeStateVarFromPtr :: Storable a => Ptr a -> StateVar a
 makeStateVarFromPtr p = makeStateVar (peek p) (poke p)
+
+withImg :: String -> (Ptr GLubyte -> GLsizei -> GLsizei -> IO ()) -> IO Bool 
+withImg imgSrc action = do
+    img' <- readImageWithMetadata imgSrc
+
+    case img' of
+      Left s -> (putStrLn $ "Error: " ++ s) >> return False
+      
+      Right (img, metaData) -> do
+        t <- return $ do
+          w <- (JP.lookup Width metaData)
+          h <- (JP.lookup Height metaData)
+          return (w,h)
+      
+        case t of
+          Nothing -> (putStrLn "Failed to read meta-data") >> return False
+          Just (imgWidth, imgHeight) -> do
+            (width, height) <- return (fromIntegral imgWidth, fromIntegral imgHeight)
+            imgRGB <- return $ convertRGB8 img
+      
+            ptr <- mallocArray (width*height*3)
+      
+            ($(0,0)) . fix $ \rec (i,j) ->
+              if i < height then do
+                let
+                  (PixelRGB8 r g b) = pixelAt imgRGB j i
+                  rbg_GLubyte = (fmap fromIntegral $ [r,g,b])::[GLubyte]
+      
+                pokeElemOff ptr (3*(width*(height-1-i)+j) + 0) (rbg_GLubyte!!0)
+                pokeElemOff ptr (3*(width*(height-1-i)+j) + 1) (rbg_GLubyte!!1)
+                pokeElemOff ptr (3*(width*(height-1-i)+j) + 2) (rbg_GLubyte!!2)
+      
+                (return $ if (succ j) >= width then (succ i, 0) else (i, succ j))
+                  >>= rec
+      
+              else
+                return ()
+  
+            action ptr (fromIntegral imgWidth) (fromIntegral imgHeight)
+            free ptr
+            return True
