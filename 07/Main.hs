@@ -23,7 +23,7 @@ main :: IO ()
 main = do
 
   vertexShaderSource <- B.readFile "./shader.vs"
-  fragmentShaderSource<- B.readFile "./shader.fs"
+  fragmentShaderSource <- B.readFile "./shader.fs"
   
   GLFW.init
   
@@ -141,18 +141,25 @@ main = do
       GL.bindVertexArrayObject $= Nothing
 
       GL.depthFunc $= Just GL.Less
+      
+      myState <- initMyStateVars
 
-      p <- mallocArray 3 :: IO (Ptr (V3 GLfloat))
-      let 
-        cameraPos = 
-          makeStateVarFromPtr $ p `plusPtr` (0*sizeOf(undefined::(V3 GLfloat)))
-        cameraDir = 
-          makeStateVarFromPtr $ p `plusPtr` (1*sizeOf(undefined::(V3 GLfloat)))
-        cameraUp  = 
-          makeStateVarFromPtr $ p `plusPtr` (2*sizeOf(undefined::(V3 GLfloat)))
+      let
+        deltaTime = getMyStateVar_f myState DeltaTime
+        lastFrame = getMyStateVar_f myState LastFrame
+        yaw       = getMyStateVar_f myState Yaw
+        pitch     = getMyStateVar_f myState Pitch
+        cameraPos = getMyStateVar_3f myState CameraPos
+        cameraDir = getMyStateVar_3f myState CameraDir
+        cameraUp  = getMyStateVar_3f myState CameraUp
 
+      deltaTime $= 0
+      lastFrame $= 0
+      yaw $= 0
+      pitch $= 0
+      
       cameraPos $= V3 0 0 3
-      cameraDir $= V3 0 0 (-1)
+      cameraDir $= calcDirectionVector 0 0
       cameraUp  $= V3 0 1 0
 
       fix $ \rec -> do
@@ -163,9 +170,7 @@ main = do
           return ()
           
         else do
-          (_,(Size scrWidth scrHeight)) <- get $ GL.viewport
-
-          processInput window (CameraState cameraPos cameraDir cameraUp)
+          (_, (Size scrWidth scrHeight)) <- get $ GL.viewport
 
           t_maybe <- getTime
           case t_maybe of
@@ -173,6 +178,10 @@ main = do
               currentCameraPos <- get cameraPos
               currentCameraDir <- get cameraDir
               currentCameraUp  <- get cameraUp
+
+
+              processInput window myState (realToFrac t)
+
 
               let
                 model = 
@@ -208,7 +217,7 @@ main = do
           
           rec
 
-      free p
+      freeMyStateVars myState
 
       deleteObjectName vao
       deleteObjectName vbo
@@ -220,9 +229,82 @@ main = do
 data CameraState = 
   CameraState (StateVar (V3 GLfloat)) (StateVar (V3 GLfloat)) (StateVar (V3 GLfloat))
 
-processInput :: Window -> CameraState -> IO ()
-processInput window (CameraState cameraPos  cameraDir  cameraUp) = do
-  let cameraSpeed = 0.05
+data MyState =
+  MyState (Ptr GLfloat) (Ptr (V3 GLfloat))
+    (StateVar GLfloat) (StateVar GLfloat)
+      (StateVar GLfloat) (StateVar GLfloat)
+        (StateVar (V3 GLfloat)) (StateVar (V3 GLfloat)) (StateVar (V3 GLfloat))
+
+
+data MyStateName =
+  DeltaTime | LastFrame | Yaw | Pitch | CameraPos | CameraDir | CameraUp 
+
+initMyStateVars :: IO MyState
+initMyStateVars = do
+  p1 <- mallocArray 4 :: IO (Ptr GLfloat)
+  p2 <- mallocArray 3 :: IO (Ptr (V3 GLfloat))
+  let
+    deltaTime =
+      makeStateVarFromPtr $ p1 `plusPtr` (0*sizeOf(undefined::GLfloat))
+    lastFrame =
+      makeStateVarFromPtr $ p1 `plusPtr` (1*sizeOf(undefined::GLfloat))
+    yaw =
+      makeStateVarFromPtr $ p1 `plusPtr` (2*sizeOf(undefined::GLfloat))
+    pitch =
+      makeStateVarFromPtr $ p1 `plusPtr` (3*sizeOf(undefined::GLfloat))
+    cameraPos = 
+      makeStateVarFromPtr $ p2 `plusPtr` (0*sizeOf(undefined::(V3 GLfloat)))
+    cameraDir = 
+      makeStateVarFromPtr $ p2 `plusPtr` (1*sizeOf(undefined::(V3 GLfloat)))
+    cameraUp  = 
+      makeStateVarFromPtr $ p2 `plusPtr` (2*sizeOf(undefined::(V3 GLfloat)))
+      
+  return (MyState p1 p2 deltaTime lastFrame yaw pitch cameraPos cameraDir cameraUp)
+
+
+getMyStateVar_f :: MyState -> MyStateName -> StateVar GLfloat
+getMyStateVar_f (MyState _ _ v1 v2 v3 v4 v5 v6 v7) varName = do
+  case varName of
+    DeltaTime -> v1
+    LastFrame -> v2
+    Yaw       -> v3
+    Pitch     -> v4
+    _         -> makeStateVarFromPtr nullPtr
+
+getMyStateVar_3f :: MyState -> MyStateName -> StateVar (V3 GLfloat)
+getMyStateVar_3f (MyState _ _ v1 v2 v3 v4 v5 v6 v7) varName = do
+  case varName of
+    CameraPos -> v5
+    CameraDir -> v6
+    CameraUp  -> v7
+    _         -> makeStateVarFromPtr nullPtr
+
+freeMyStateVars :: MyState -> IO ()
+freeMyStateVars (MyState p1 p2 _ _ _ _ _ _ _) = do
+  free p1
+  free p2
+
+
+processInput :: Window -> MyState -> GLfloat -> IO ()
+processInput window myState t = do
+  let
+    sensitivity = 7
+    deltaTime   = getMyStateVar_f  myState DeltaTime
+    lastFrame   = getMyStateVar_f  myState LastFrame
+    yaw         = getMyStateVar_f  myState Yaw
+    pitch       = getMyStateVar_f  myState Pitch
+    cameraPos   = getMyStateVar_3f myState CameraPos
+    cameraDir   = getMyStateVar_3f myState CameraDir
+    cameraUp    = getMyStateVar_3f myState CameraUp
+    
+  lastFrame_val <- get lastFrame
+
+  let
+    deltaTime = t
+    cameraSpeed = 2.5 * (t - lastFrame_val)
+
+  lastFrame $= t
+
   currentCameraDir <- get cameraDir
   currentCameraUp  <- get cameraUp
   GLFW.getKey window GLFW.Key'Escape >>= \s -> 
@@ -245,6 +327,46 @@ processInput window (CameraState cameraPos  cameraDir  cameraUp) = do
     if (s == GLFW.KeyState'Pressed) then
       cameraPos $~ (+ (cameraSpeed *^ currentCameraDir))
     else return ()
+
+
+  yaw_val   <- get yaw
+  pitch_val <- get pitch
+
+  GLFW.getKey window GLFW.Key'W >>= \s -> 
+    if (s == GLFW.KeyState'Pressed) then
+      pitch $~ (+ (cameraSpeed * sensitivity))
+    else return ()
+  GLFW.getKey window GLFW.Key'S >>= \s -> 
+    if (s == GLFW.KeyState'Pressed) then
+      pitch $~ (+ ((-1)*cameraSpeed * sensitivity))
+    else return ()
+  GLFW.getKey window GLFW.Key'A >>= \s -> 
+    if (s == GLFW.KeyState'Pressed) then
+      yaw $~ (+ ((-1)*cameraSpeed * sensitivity))
+    else return ()
+  GLFW.getKey window GLFW.Key'D >>= \s -> 
+    if (s == GLFW.KeyState'Pressed) then
+      yaw $~ (+ (cameraSpeed * sensitivity))
+    else return ()
+
+  yaw_val   <- get yaw
+  pitch_val <- get pitch
+
+  if abs yaw_val > 360 then
+    yaw $~ (\x -> (signum x) * (abs x - (fromIntegral.floor) (abs x/360) * 360))
+  else
+    return ()
+
+  if abs pitch_val > 89 then
+    pitch $= (signum pitch_val) * 89
+  else
+    return ()
+
+  yaw_val'   <- get yaw
+  pitch_val' <- get pitch
+
+  cameraDir $= calcDirectionVector yaw_val' pitch_val'
+
 
 framebufferSizeCallback :: GLFW.FramebufferSizeCallback
 framebufferSizeCallback window width height = 
@@ -333,6 +455,16 @@ model_cube =
 
 makeStateVarFromPtr :: Storable a => Ptr a -> StateVar a
 makeStateVarFromPtr p = makeStateVar (peek p) (poke p)
+
+calcDirectionVector :: GLfloat -> GLfloat -> V3 GLfloat
+calcDirectionVector yaw_deg pitch_deg = 
+  Linear.Metric.normalize $ V3 x y z
+  where
+    yaw   = radians (yaw_deg - 90)
+    pitch = radians pitch_deg
+    x = cos yaw * cos pitch
+    y = sin pitch
+    z = sin yaw * cos pitch
 
 withImg :: String -> (Ptr GLubyte -> GLsizei -> GLsizei -> IO ()) -> IO Bool 
 withImg imgSrc action = do
