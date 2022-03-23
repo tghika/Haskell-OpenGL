@@ -21,9 +21,6 @@ import qualified Data.ByteString as B
 
 main :: IO ()
 main = do
-
-  vertexShaderSource <- B.readFile "./shader.vs"
-  fragmentShaderSource <- B.readFile "./shader.fs"
   
   GLFW.init
   
@@ -42,44 +39,7 @@ main = do
       GLFW.makeContextCurrent (Just window)
       GLFW.setFramebufferSizeCallback window (Just framebufferSizeCallback)
 
-      let
-        checkIfSuccess obj = case obj of
-          Left shaderObj -> do
-            success <- get $ GL.compileStatus shaderObj
-            if success then
-              return ()
-            else do
-              infoLog <- get $ GL.shaderInfoLog shaderObj
-              putStrLn $ "ERROR::COMPILATION_FAILED\n" ++ infoLog
-
-          Right shaderProgramObj -> do
-            success <- get $ GL.linkStatus shaderProgramObj
-            if success then
-              return ()
-            else do
-              infoLog <- get $ GL.programInfoLog shaderProgramObj
-              putStrLn $ "ERROR::LINKING_FAILED\n" ++ infoLog
-
-        compileShaderSrc src t = do
-          shaderObj <- GL.createShader t
-          GL.shaderSourceBS shaderObj $= src
-          GL.compileShader shaderObj
-          return shaderObj
-
-      vertexShader <- compileShaderSrc vertexShaderSource GL.VertexShader
-      checkIfSuccess $ Left vertexShader
-      
-      fragmentShader <- compileShaderSrc fragmentShaderSource GL.FragmentShader
-      checkIfSuccess $ Left fragmentShader
-      
-      shaderProgram <- GL.createProgram
-      GL.attachShader shaderProgram vertexShader
-      GL.attachShader shaderProgram fragmentShader
-      GL.linkProgram shaderProgram
-      checkIfSuccess $ Right shaderProgram
-      
-      deleteObjectName vertexShader
-      deleteObjectName fragmentShader
+      shaderProgram <- buildShaderProgram window ["./shader.vs", "./shader.fs"]
 
       GL.currentProgram $= Just shaderProgram
 
@@ -152,6 +112,7 @@ main = do
         cameraPos = getMyStateVar_3f myState CameraPos
         cameraDir = getMyStateVar_3f myState CameraDir
         cameraUp  = getMyStateVar_3f myState CameraUp
+        lightPos  = getMyStateVar_3f myState LightPos
 
       deltaTime $= 0
       lastFrame $= 0
@@ -161,6 +122,7 @@ main = do
       cameraPos $= V3 0 0 3
       cameraDir $= calcDirectionVector 0 0
       cameraUp  $= V3 0 1 0
+      lightPos  $= V3 1.2 1 2
 
       fix $ \rec -> do
 
@@ -225,24 +187,22 @@ main = do
 
       GLFW.terminate
 
-    
-data CameraState = 
-  CameraState (StateVar (V3 GLfloat)) (StateVar (V3 GLfloat)) (StateVar (V3 GLfloat))
 
 data MyState =
   MyState (Ptr GLfloat) (Ptr (V3 GLfloat))
     (StateVar GLfloat) (StateVar GLfloat)
       (StateVar GLfloat) (StateVar GLfloat)
         (StateVar (V3 GLfloat)) (StateVar (V3 GLfloat)) (StateVar (V3 GLfloat))
+          (StateVar (V3 GLfloat))
 
 
 data MyStateName =
-  DeltaTime | LastFrame | Yaw | Pitch | CameraPos | CameraDir | CameraUp 
+  DeltaTime | LastFrame | Yaw | Pitch | CameraPos | CameraDir | CameraUp | LightPos
 
 initMyStateVars :: IO MyState
 initMyStateVars = do
   p1 <- mallocArray 4 :: IO (Ptr GLfloat)
-  p2 <- mallocArray 3 :: IO (Ptr (V3 GLfloat))
+  p2 <- mallocArray 4 :: IO (Ptr (V3 GLfloat))
   let
     deltaTime =
       makeStateVarFromPtr $ p1 `plusPtr` (0*sizeOf(undefined::GLfloat))
@@ -258,12 +218,15 @@ initMyStateVars = do
       makeStateVarFromPtr $ p2 `plusPtr` (1*sizeOf(undefined::(V3 GLfloat)))
     cameraUp  = 
       makeStateVarFromPtr $ p2 `plusPtr` (2*sizeOf(undefined::(V3 GLfloat)))
+    lightPos  = 
+      makeStateVarFromPtr $ p2 `plusPtr` (3*sizeOf(undefined::(V3 GLfloat)))
+
       
-  return (MyState p1 p2 deltaTime lastFrame yaw pitch cameraPos cameraDir cameraUp)
+  return (MyState p1 p2 deltaTime lastFrame yaw pitch cameraPos cameraDir cameraUp lightPos)
 
 
 getMyStateVar_f :: MyState -> MyStateName -> StateVar GLfloat
-getMyStateVar_f (MyState _ _ v1 v2 v3 v4 v5 v6 v7) varName = do
+getMyStateVar_f (MyState _ _ v1 v2 v3 v4 v5 v6 v7 v8) varName = do
   case varName of
     DeltaTime -> v1
     LastFrame -> v2
@@ -272,15 +235,16 @@ getMyStateVar_f (MyState _ _ v1 v2 v3 v4 v5 v6 v7) varName = do
     _         -> makeStateVarFromPtr nullPtr
 
 getMyStateVar_3f :: MyState -> MyStateName -> StateVar (V3 GLfloat)
-getMyStateVar_3f (MyState _ _ v1 v2 v3 v4 v5 v6 v7) varName = do
+getMyStateVar_3f (MyState _ _ v1 v2 v3 v4 v5 v6 v7 v8) varName = do
   case varName of
     CameraPos -> v5
     CameraDir -> v6
     CameraUp  -> v7
+    LightPos  -> v8
     _         -> makeStateVarFromPtr nullPtr
 
 freeMyStateVars :: MyState -> IO ()
-freeMyStateVars (MyState p1 p2 _ _ _ _ _ _ _) = do
+freeMyStateVars (MyState p1 p2 _ _ _ _ _ _ _ _) = do
   free p1
   free p2
 
@@ -296,6 +260,7 @@ processInput window myState t = do
     cameraPos   = getMyStateVar_3f myState CameraPos
     cameraDir   = getMyStateVar_3f myState CameraDir
     cameraUp    = getMyStateVar_3f myState CameraUp
+    lightPos    = getMyStateVar_3f myState LightPos
     
   lastFrame_val <- get lastFrame
 
@@ -506,3 +471,80 @@ withImg imgSrc action = do
             action ptr (fromIntegral imgWidth) (fromIntegral imgHeight)
             free ptr
             return True
+
+
+
+buildShaderProgram :: Window -> [String] -> IO Program
+buildShaderProgram window shaders = do
+  
+  vertexShaderSource <- B.readFile $ selectShaderSrc Shader_Vert shaders
+  fragmentShaderSource <- B.readFile $ selectShaderSrc Shader_Frag shaders
+
+  GLFW.makeContextCurrent (Just window)
+
+  vertexShader <- compileShaderSrc vertexShaderSource GL.VertexShader
+  checkIfSuccess $ Left vertexShader
+  
+  fragmentShader <- compileShaderSrc fragmentShaderSource GL.FragmentShader
+  checkIfSuccess $ Left fragmentShader
+  
+  shaderProgram <- GL.createProgram
+  GL.attachShader shaderProgram vertexShader
+  GL.attachShader shaderProgram fragmentShader
+  GL.linkProgram shaderProgram
+  checkIfSuccess $ Right shaderProgram
+  
+  deleteObjectName vertexShader
+  deleteObjectName fragmentShader
+  
+  return shaderProgram
+
+
+data ShaderType = Shader_Vert | Shader_Frag | Shader_Unknown deriving Eq
+
+
+selectShaderSrc t xs = do
+  let xs' = zip (fmap getShaderType $ xs) xs
+
+  (shaderType, fileName) <- xs'
+  if shaderType == t then
+    fileName
+  else
+    []
+
+
+getShaderType fileName =
+  if ext == ".vs" then
+    Shader_Vert
+  else if ext == ".fs" then
+    Shader_Frag
+  else
+    Shader_Unknown
+
+  where ext = '.' : (reverse $ takeWhile (/='.') $ reverse fileName)
+
+
+checkIfSuccess obj = case obj of
+  Left shaderObj -> do
+    success <- get $ GL.compileStatus shaderObj
+    if success then
+      return ()
+    else do
+      infoLog <- get $ GL.shaderInfoLog shaderObj
+      putStrLn $ "ERROR::COMPILATION_FAILED\n" ++ infoLog
+
+  Right shaderProgramObj -> do
+    success <- get $ GL.linkStatus shaderProgramObj
+    if success then
+      return ()
+    else do
+      infoLog <- get $ GL.programInfoLog shaderProgramObj
+      putStrLn $ "ERROR::LINKING_FAILED\n" ++ infoLog
+
+compileShaderSrc src t = do
+  shaderObj <- GL.createShader t
+  GL.shaderSourceBS shaderObj $= src
+  GL.compileShader shaderObj
+  return shaderObj
+
+
