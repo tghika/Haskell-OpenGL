@@ -192,6 +192,8 @@ main = do
               GL.textureBinding GL.Texture2D $= Just diffuseMap
               GL.activeTexture $= GL.TextureUnit 1
               GL.textureBinding GL.Texture2D $= Just specularMap
+              GL.activeTexture $= GL.TextureUnit 2
+              GL.textureBinding GL.TextureCubeMap $= Just cubemapTexture
               GL.drawArrays GL.Triangles 0 36
               GL.bindVertexArrayObject $= Nothing
 
