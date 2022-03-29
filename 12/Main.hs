@@ -131,9 +131,10 @@ main = do
       GL.textureFilter GL.Texture2D
         $= ((GL.Nearest, Nothing), GL.Nearest)
       GL.textureWrapMode GL.Texture2D GL.S
-        $= (GL.Repeated, GL.Repeat)
+        $= (GL.Repeated, GL.ClampToBorder)
       GL.textureWrapMode GL.Texture2D GL.T
-        $= (GL.Repeated, GL.Repeat)
+        $= (GL.Repeated, GL.ClampToBorder)
+      GL.textureBorderColor GL.Texture2D $= Color4 1 1 1 1
 
       GL.bindFramebuffer GL.Framebuffer $= depthMapFBO
       GL.framebufferTexture2D GL.Framebuffer GL.DepthAttachment
@@ -214,8 +215,8 @@ main = do
 
 
               lightSpaceMatrix <- mat4ToGLmatrix $
-                (mat4_ortho 20 20 1 7.5) !*!
-                (mat4_lookAt ((2/21)*^currentLightPos) (V3 0 0 0) (V3 0 1 0))
+                (mat4_ortho 20 20 1 27.5) !*!
+                (mat4_lookAt ((8/21)*^currentLightPos) (V3 0 0 0) (V3 0 1 0))
 
               view <- mat4ToGLmatrix $
                 mat4_lookAt currentCameraPos
@@ -234,6 +235,7 @@ main = do
                 mat4_rotate (V3 0.3 0.2 0.1) (realToFrac t * radians (-55)) !*!
                 mat4_scale 0.2 0.2 0.2
 
+              GL.cullFace  $= Just GL.Front
               GL.currentProgram $= Just simpleDepthShader
 
               GL.uniform uLoc_C_lightSpaceMatrix $= lightSpaceMatrix
@@ -244,6 +246,7 @@ main = do
               renderScene modelData (uLoc_C_model, Nothing, Nothing, Nothing) 
               GL.bindFramebuffer GL.Framebuffer $= GL.defaultFramebufferObject
 
+              GL.cullFace  $= Just GL.Back
               GL.viewport $= (GL.Position 0 0, GL.Size scrWidth scrHeight)
               GL.clear [GL.ColorBuffer, GL.DepthBuffer]
 
