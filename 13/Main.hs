@@ -64,10 +64,6 @@ main = do
       uLoc_A_light_diffuse       <- get $ GL.uniformLocation lightingShader "light.diffuse"
       uLoc_A_light_specular      <- get $ GL.uniformLocation lightingShader "light.specular"
       uLoc_A_light_position      <- get $ GL.uniformLocation lightingShader "light.position"
-      uLoc_A_viewPos             <- get $ GL.uniformLocation lightingShader "viewPos"
-      uLoc_A_model               <- get $ GL.uniformLocation lightingShader "model"
-      uLoc_A_view                <- get $ GL.uniformLocation lightingShader "view"
-      uLoc_A_projection          <- get $ GL.uniformLocation lightingShader "projection"
       uLoc_A_gPosition           <- get $ GL.uniformLocation lightingShader "gPosition"
       uLoc_A_gNormal             <- get $ GL.uniformLocation lightingShader "gNormal"
       uLoc_A_gAlbedo             <- get $ GL.uniformLocation lightingShader "gAlbedo"
@@ -191,8 +187,6 @@ main = do
 
       GL.bindFramebuffer GL.Framebuffer $= GL.defaultFramebufferObject
 
-
-      -- 4/6
       let rnds = take (64*4) $ (randomRs (0,1) (mkStdGen 90) :: [GLfloat])
       ssaoKernel <- return $ do
         i <- [0..(64-1)]
@@ -378,12 +372,11 @@ main = do
                 (mat4_ortho 20 20 1 27.5) !*!
                 (mat4_lookAt ((8/21)*^currentLightPos) (V3 0 0 0) (V3 0 1 0))
 
-              view <- mat4ToGLmatrix $
-                mat4_lookAt currentCameraPos
-                  (currentCameraPos + currentCameraDir) currentCameraUp
+
+              view_ <- return $ mat4_lookAt currentCameraPos (currentCameraPos + currentCameraDir) currentCameraUp
+              view <- mat4ToGLmatrix $ view_
               view2 <- mat4ToGLmatrix $
-                removeTranslation $ mat4_lookAt currentCameraPos
-                  (currentCameraPos + currentCameraDir) currentCameraUp
+                removeTranslation $ view_
               projection <- mat4ToGLmatrix $
                 mat4_perspective (radians 45)
                   ((fromIntegral scrWidth)/(fromIntegral scrHeight)) 0.1 100
@@ -421,7 +414,6 @@ main = do
               renderScene modelData (uLoc_D_model, Nothing, Nothing, Just uLoc_D_material_shininess) 
 
               -- drawing skybox
-
               GL.depthFunc $= Just GL.Lequal
               GL.currentProgram $= Just skyboxShader
 
@@ -465,13 +457,11 @@ main = do
 
               -- lighting
               GL.currentProgram $= Just lightingShader
-              GL.uniform uLoc_A_viewPos            $= v3ToVector3 currentCameraPos
-              GL.uniform uLoc_A_light_position     $= v3ToVector3 currentLightPos
+              GL.uniform uLoc_A_light_position     $= (v3ToVector3 $ (view_ !* point currentLightPos) ^._xyz)
               GL.uniform uLoc_A_light_ambient      $= (Vector3 0.2 0.2 0.2 :: Vector3 GLfloat)
               GL.uniform uLoc_A_light_diffuse      $= (Vector3 0.5 0.5 0.5 :: Vector3 GLfloat)
               GL.uniform uLoc_A_light_specular     $= (Vector3 1 1 1 :: Vector3 GLfloat)
-              GL.uniform uLoc_A_view               $= view
-              GL.uniform uLoc_A_projection         $= projection
+
 
               GL.activeTexture $= GL.TextureUnit 0
               GL.textureBinding GL.Texture2D $= Just gPosition
