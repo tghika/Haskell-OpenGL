@@ -181,17 +181,19 @@ main = do
         (TextureSize2D bufferWidth bufferHeight) 0
           (GL.PixelData GL.Red GL.Float nullPtr)
       GL.textureFilter GL.Texture2D
-        $= ((GL.Nearest, Nothing), GL.Nearest)
+        $= ((GL.Linear', Nothing), GL.Linear')
       GL.framebufferTexture2D GL.Framebuffer (GL.ColorAttachment 0)
         GL.Texture2D ssaoColorBufferBlur 0
 
       GL.bindFramebuffer GL.Framebuffer $= GL.defaultFramebufferObject
 
-      let rnds = take (64*4) $ (randomRs (0,1) (mkStdGen 90) :: [GLfloat])
+      let
+        kernelSize = 64
+        rnds = take (kernelSize*4) $ (randomRs (0,1) (mkStdGen 90) :: [GLfloat])
       ssaoKernel <- return $ do
-        i <- [0..(64-1)]
+        i <- [0..(kernelSize-1)]
         let
-          scale = fromIntegral i / 64
+          scale = fromIntegral i / fromIntegral kernelSize
           x1   = rnds!!(4*i+0)*2-1
           x2   = rnds!!(4*i+1)*2-1
           x3   = rnds!!(4*i+2)
@@ -199,9 +201,11 @@ main = do
         return $ (lerp' 0.1 1 (scale*scale) * k) *^ (Linear.Metric.normalize $ V3 x1 x2 x3)
       -- print ssaoKernel
        
-      let rnds2 = take (16*2) $ (randomRs (0,1) (mkStdGen 91) :: [GLfloat])
+      let
+        sizeOfNoiseTex = 4*4
+        rnds2 = take (sizeOfNoiseTex*2) $ (randomRs (0,1) (mkStdGen 91) :: [GLfloat])
       ssaoNoise <- return $ do
-        i <- [0..(16-1)]
+        i <- [0..(sizeOfNoiseTex-1)]
         [rnds2!!(2*i+0)*2-1, rnds2!!(2*i+1)*2-1, 0]
       -- print ssaoNoise
     
@@ -249,7 +253,7 @@ main = do
       diffuseMap   <- loadTexture2D $ "./container2.jpg"
       specularMap  <- loadTexture2D $ "./container2_specular.jpg"
       floorTexture <- loadTexture2D $ "./grass.jpg"
-      (Just cubemapTexture) <- loadCubemap (fmap (++".jpg") $ ["right","left","top","bottom","front","back"])
+      (Just cubemapTexture) <- loadCubemap (fmap (++".bmp") $ ["right","left","top","bottom","front","back"])
 
       let 
         shadowWidth  = 1024
@@ -306,21 +310,23 @@ main = do
       GL.bindBuffer GL.ArrayBuffer $= Nothing
       GL.bindVertexArrayObject     $= Nothing
 
-      let 
+      let
+        material_B = MyMaterial2 (Just diffuseMap) (Just specularMap) 64
         modelData = (ModelData (makeListOfVAOs planeVAO cubeVAO) []) `addObject`
           (Obj_Plane, MyMaterial2 (Just floorTexture) Nothing 64, identity) `addObject`
-          (Obj_Cube, MyMaterial2 (Just diffuseMap) (Just specularMap) 64, identity) `addObject`
-          (Obj_Cube, MyMaterial2 (Just diffuseMap) (Just specularMap) 64, mat4_translate (V3 10.5 0 3)) `addObject`
-          (Obj_Cube, MyMaterial2 (Just diffuseMap) (Just specularMap) 64, mat4_translate (V3 2 0 (-4))) `addObject`
-          (Obj_Cube, MyMaterial2 (Just diffuseMap) (Just specularMap) 64, mat4_translate (V3 (-3) 0 (-3))) `addObject`
-          (Obj_Cube, MyMaterial2 (Just diffuseMap) (Just specularMap) 64, mat4_translate (V3 1 0 4.5)) `addObject`
-          (Obj_Cube, MyMaterial2 (Just diffuseMap) (Just specularMap) 64, mat4_translate (V3 7.2 0 (-1.4))) `addObject`
-          (Obj_Cube, MyMaterial2 (Just diffuseMap) (Just specularMap) 64, mat4_translate (V3 (-9) 0 (-1))) `addObject`
-          (Obj_Cube, MyMaterial2 (Just diffuseMap) (Just specularMap) 64, mat4_translate (V3 (-0.2) 0 (-1.19))) `addObject`
-          (Obj_Cube, MyMaterial2 (Just diffuseMap) (Just specularMap) 64, mat4_translate (V3 (-0.59) 0 1)) `addObject`
-          (Obj_Cube, MyMaterial2 (Just diffuseMap) (Just specularMap) 64, mat4_translate (V3 (-1.89) 0 0)) `addObject`
-          (Obj_Cube, MyMaterial2 (Just diffuseMap) (Just specularMap) 64, mat4_translate (V3 (-0.1) 1 (-0.5))) `addObject`
-          (Obj_Cube, MyMaterial2 (Just diffuseMap) (Just specularMap) 64, mat4_translate (V3 (-5) 0 2))
+          (Obj_Cube, material_B, identity) `addObject`
+          (Obj_Cube, material_B, mat4_translate (V3 10.5 0 3)) `addObject`
+          (Obj_Cube, material_B, mat4_translate (V3 2 0 (-4))) `addObject`
+          (Obj_Cube, material_B, mat4_translate (V3 (-3) 0 (-3))) `addObject`
+          (Obj_Cube, material_B, mat4_translate (V3 1 0 4.5)) `addObject`
+          (Obj_Cube, material_B, mat4_translate (V3 7.2 0 (-1.4))) `addObject`
+          (Obj_Cube, material_B, mat4_translate (V3 (-9) 0 (-1))) `addObject`
+          (Obj_Cube, material_B, mat4_translate (V3 (-0.2) 0 (-1.19))) `addObject`
+          (Obj_Cube, material_B, mat4_translate (V3 (-0.59) 0 1)) `addObject`
+          (Obj_Cube, material_B, mat4_translate (V3 (-1.89) 0 0)) `addObject`
+          (Obj_Cube, material_B, mat4_translate (V3 (-0.1) 1 (-0.5))) `addObject`
+          (Obj_Cube, material_B, (mat4_translate (V3 (-3+0.59) ((1+sqrt 3)/4-0.5) (-3.5-((1+sqrt 3)/4)))) !*! mat4_rotate (V3 1 0 0) (radians (-60))) `addObject`
+          (Obj_Cube, material_B, mat4_translate (V3 (-5) 0 2))
       
       myState <- initMyStateVars
 
