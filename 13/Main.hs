@@ -456,6 +456,7 @@ main = do
               GL.bindFramebuffer GL.Framebuffer $= GL.defaultFramebufferObject
 
               -- lighting
+              GL.viewport $= (GL.Position 0 0, GL.Size scrWidth scrHeight)
               GL.currentProgram $= Just lightingShader
               GL.uniform uLoc_A_light_position     $= (v3ToVector3 $ (view_ !* point currentLightPos) ^._xyz)
               GL.uniform uLoc_A_light_ambient      $= (Vector3 0.2 0.2 0.2 :: Vector3 GLfloat)
