@@ -1119,7 +1119,7 @@ loadCubemap faces = do
     texture <- genObjectName
     GL.textureBinding GL.TextureCubeMap $= Just texture
   
-    ($0) $ fix $ \rec i -> do
+    ($0) . fix $ \rec i -> do
       if i < 6 then do
         success <- withImg False (faces !! i) $ \ptr imgWidth imgHeight -> do
           GL.texImage2D (labels !! i) GL.NoProxy 0 GL.RGB'
